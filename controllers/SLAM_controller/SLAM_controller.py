@@ -3,16 +3,15 @@
 import math
 import copy
 from controller import Robot, Motor, DistanceSensor
-import csci3302_final_supervisor
+import SLAM_controller_supervisor
 import numpy as np
 import collections
-from operator import 
 
 state = "line_follower" # Drive along the course
 USE_ODOMETRY = False # False for ground truth pose information, True for real odometry
 # create the Robot instance.
-#csci3302_final_supervisor.init_supervisor()
-#robot = csci3302_final_supervisor.supervisor
+SLAM_controller_supervisor.init_supervisor()
+robot = SLAM_controller_supervisor.supervisor
 
 # Map Variables
 MAP_BOUNDS = [1.,1.] 
@@ -113,7 +112,7 @@ n = 50 # number of static landmarks
 mu = []
 mu_new = []
 cov = []
-c_prob []
+c_prob = []
 
 #From Lab 4
 def convert_lidar_reading_to_world_coord(lidar_bin, lidar_distance):
@@ -219,7 +218,14 @@ def get_wheel_speeds(target_pose):
     return phi_l_pct, phi_r_pct
 
 def EKF_init(x_init):
-    global mu, mu_new, cov, c_prob
+    global Rt, Qt, mu, mu_new, cov, c_prob
+
+    Rt = 5*np.array([[0.1,0,0],
+               [0,0.01,0],
+               [0,0,0.01]])
+    Qt = np.array([[0.01,0],
+               [0,0.01]])
+
     mu = np.append(np.array([x_init]).T,np.zeros((2*n,1)),axis=0)
     mu_new = mu
 
@@ -228,12 +234,75 @@ def EKF_init(x_init):
 
     c_prob = 0.5*np.ones((n,1))
 
-def EKF_predict():
-    pass
+def EKF_predict(u, Rt):
+    n = len(mu)
+
+    # Define motion model f(mu,u)
+    [dtrans, drot1, drot2] = u
+    motion = np.array([[dtrans*np.cos(mu[2][0]+drot1)],
+                       [dtrans*np.sin(mu[2][0]+drot1)],
+                       [drot1 + drot2]])
+    F = np.append(np.eye(3),np.zeros((3,n-3)),axis=1)
+    
+    # Predict new state
+    mu_bar = mu + (F.T).dot(motion)
+    
+    # Define motion model Jacobian
+    J = np.array([[0,0,-dtrans*np.sin(mu[2][0]+drot1)],
+                  [0,0,dtrans*np.cos(mu[2][0]+drot1)],
+                  [0,0,0]])
+    G = np.eye(n) + (F.T).dot(J).dot(F)
+    
+    # Predict new covariance
+    cov_bar = G.dot(cov).dot(G.T) + (F.T).dot(Rt).dot(F)
+    
+    print('Predicted location\t x: {0:.2f} \t y: {1:.2f} \t theta: {2:.2f}'.format(mu_bar[0][0],mu_bar[1][0],mu_bar[2][0]))
+    return mu_bar, cov_bar
 
 
-def EKF_update():
-    pass
+def EKF_update(obs, c_prob, Qt):
+    N = len(mu)
+    
+    for [r, theta, j] in obs:
+        j = int(j)
+        # if landmark has not been observed before
+        if cov[2*j+3][2*j+3] >= 1e6 and cov[2*j+4][2*j+4] >= 1e6:
+            # define landmark estimate as current measurement
+            mu[2*j+3][0] = mu[0][0] + r*np.cos(theta+mu[2][0])
+            mu[2*j+4][0] = mu[1][0] + r*np.sin(theta+mu[2][0])
+
+        
+        # if landmark is static
+        if c_prob[j] >= 0.5:
+            # compute expected observation
+            delta = np.array([mu[2*j+3][0] - mu[0][0], mu[2*j+4][0] - mu[1][0]])
+            q = delta.T.dot(delta)
+            sq = np.sqrt(q)
+            z_theta = np.arctan2(delta[1],delta[0])
+            z_hat = np.array([[sq], [z_theta-mu[2][0]]])
+            
+            # calculate Jacobian
+            F = np.zeros((5,N))
+            F[:3,:3] = np.eye(3)
+            F[3,2*j+3] = 1
+            F[4,2*j+4] = 1
+            H_z = np.array([[-sq*delta[0], -sq*delta[1], 0, sq*delta[0], sq*delta[1]],
+                            [delta[1], -delta[0], -q, -delta[1], delta[0]]], dtype='float')
+            H = 1/q*H_z.dot(F)
+    
+            # calculate Kalman gain        
+            K = cov.dot(H.T).dot(np.linalg.inv(H.dot(cov).dot(H.T)+Qt))
+            
+            # calculate difference between expected and real observation
+            z_dif = np.array([[r],[theta]])-z_hat
+            z_dif = (z_dif + np.pi) % (2*np.pi) - np.pi
+            
+            # update state vector and covariance matrix        
+            mu = mu + K.dot(z_dif)
+            cov = (np.eye(N)-K.dot(H)).dot(cov)
+    
+    print('Updated location\t x: {0:.2f} \t y: {1:.2f} \t theta: {2:.2f}'.format(mu[0][0],mu[1][0],mu[2][0]))
+    return mu, cov, c_prob
 
 def move(u):
     lspeed, rspeed = get_wheel_speeds(u)
@@ -278,7 +347,13 @@ def main():
 
     #Init
     EKF_init(start_pose)
-    
+
+    print("MU: ", mu)
+
+    print("Cov: ", cov)
+
+    print("c_prob: ", c_prob)
+
     # Main Control Loop:
     while robot.step(SIM_TIMESTEP) != -1:   
         
@@ -297,9 +372,14 @@ def main():
 
 
         #Predict
-
+        mu_new, cov = EKF_predict(u, Rt)
+        mu = np.append(mu,mu_new,axis=1)
         #Update
+        mu_new, cov, c_prob_new = EKF_update(lidar_obs, c_prob[:,-1].reshape(n,1), Qt)
+        mu = np.append(mu,mu_new,axis=1)
+        c_prob = np.append(c_prob, c_prob_new, axis=1)
 
+        #Plot stuffs
 
 if __name__ == "__main__":
     main()
