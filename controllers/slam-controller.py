@@ -108,6 +108,13 @@ lidar_offsets = np.linspace(-step*(LIDAR_ANGLE_BINS//2), step*(LIDAR_ANGLE_BINS/
 #lidar_offsets = -1 * lidar_offsets
 print(lidar_offsets)
 
+#EKF Vars
+n = 50 # number of static landmarks
+mu = []
+mu_new = []
+cov = []
+c_prob []
+
 #From Lab 4
 def convert_lidar_reading_to_world_coord(lidar_bin, lidar_distance):
     """
@@ -211,11 +218,21 @@ def get_wheel_speeds(target_pose):
        
     return phi_l_pct, phi_r_pct
 
-def predict():
+def EKF_init(x_init):
+    global mu, mu_new, cov, c_prob
+    mu = np.append(np.array([x_init]).T,np.zeros((2*n,1)),axis=0)
+    mu_new = mu
+
+    cov = float("inf")*np.eye(2*n+3)
+    cov[:3,:3] = np.zeros((3,3))
+
+    c_prob = 0.5*np.ones((n,1))
+
+def EKF_predict():
     pass
 
 
-def update():
+def EKF_update():
     pass
 
 def move(u):
@@ -258,6 +275,9 @@ def main():
 
     start_pose = csci3302_lab5_supervisor.supervisor_get_robot_pose()
     pose_x, pose_y, pose_theta = start_pose
+
+    #Init
+    EKF_init(start_pose)
     
     # Main Control Loop:
     while robot.step(SIM_TIMESTEP) != -1:   
@@ -269,14 +289,11 @@ def main():
         last_odometry_update_time = robot.getTime()
         print("Current pose: [%5f, %5f, %5f]" % (pose_x, pose_y, pose_theta))
 
-        
-        
-    
         #Move
         move(u)
 
         #Sense
-
+        sense()
 
 
         #Predict
