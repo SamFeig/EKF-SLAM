@@ -18,6 +18,9 @@ RectangleArena {
 E-puck {
   translation 0 0 1.24
   rotation 0 1 0 -1.5707953071795862
+  name "EPUCK"
+  controller "SLAM_controller"
+  supervisor TRUE
   turretSlot [
     RobotisLds01 {
       noise 0

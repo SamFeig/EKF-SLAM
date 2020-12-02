@@ -7,4 +7,4 @@ centralWidgetVisible: 1
 orthographicViewHeight: 1
 textFiles: -1
 consoles: Console:All:All
-renderingDevicePerspectives: e-puck:camera;1;1;0;0
+renderingDevicePerspectives: EPUCK:camera;1;1;0;0

@@ -22,7 +22,7 @@ NUM_Y_CELLS = int(MAP_BOUNDS[1] / CELL_RESOLUTIONS[1])
 world_map = np.zeros([NUM_Y_CELLS,NUM_X_CELLS])
 
 def populate_map(m):
-    obs_list = csci3302_final_supervisor.supervisor_get_obstacle_positions()
+    obs_list = SLAM_controller_supervisor.supervisor_get_obstacle_positions()
     obs_size = 0.06 # 6cm boxes
     for obs in obs_list:
         obs_coords_lower = obs - obs_size/2.
@@ -173,7 +173,7 @@ def get_wheel_speeds(target_pose):
     '''
     global pose_x, pose_y, pose_theta, left_wheel_direction, right_wheel_direction
 
-    pose_x, pose_y, pose_theta = csci3302_lab5_supervisor.supervisor_get_robot_pose()
+    pose_x, pose_y, pose_theta = SLAM_controller_supervisor.supervisor_get_robot_pose()
 
 
     bearing_error = math.atan2( (target_pose[1] - pose_y), (target_pose[0] - pose_x) ) - pose_theta
@@ -342,7 +342,7 @@ def main():
     # Sensor burn-in period
     for i in range(10): robot.step(SIM_TIMESTEP)
 
-    start_pose = csci3302_lab5_supervisor.supervisor_get_robot_pose()
+    start_pose = SLAM_controller_supervisor.supervisor_get_robot_pose()
     pose_x, pose_y, pose_theta = start_pose
 
     #Init
