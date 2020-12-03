@@ -24,9 +24,9 @@ def init_supervisor():
     robot_node = None
     target_node = None
     for idx in range(root_children_field.getCount()):
-        if root_children_field.getMFNode(idx).getDef() == "EPUCK":
+        if root_children_field.getMFNode(idx).getTypeName() == "E-puck":
             robot_node = root_children_field.getMFNode(idx)
-        if root_children_field.getMFNode(idx).getDef() == "Goal":
+        if root_children_field.getMFNode(idx).getTypeName() == "Goal":
             target_node = root_children_field.getMFNode(idx) 
 
     start_translation = copy.copy(robot_node.getField("translation").getSFVec3f())

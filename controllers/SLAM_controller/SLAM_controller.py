@@ -7,7 +7,7 @@ import SLAM_controller_supervisor
 import numpy as np
 import collections
 
-state = "line_follower" # Drive along the course
+state = "predict" # Drive along the course
 USE_ODOMETRY = False # False for ground truth pose information, True for real odometry
 # create the Robot instance.
 SLAM_controller_supervisor.init_supervisor()
@@ -22,7 +22,7 @@ NUM_Y_CELLS = int(MAP_BOUNDS[1] / CELL_RESOLUTIONS[1])
 world_map = np.zeros([NUM_Y_CELLS,NUM_X_CELLS])
 
 def populate_map(m):
-    obs_list = csci3302_final_supervisor.supervisor_get_obstacle_positions()
+    obs_list = SLAM_controller_supervisor.supervisor_get_obstacle_positions()
     obs_size = 0.06 # 6cm boxes
     for obs in obs_list:
         obs_coords_lower = obs - obs_size/2.
@@ -173,7 +173,7 @@ def get_wheel_speeds(target_pose):
     '''
     global pose_x, pose_y, pose_theta, left_wheel_direction, right_wheel_direction
 
-    pose_x, pose_y, pose_theta = csci3302_lab5_supervisor.supervisor_get_robot_pose()
+    pose_x, pose_y, pose_theta = SLAM_controller_supervisor.supervisor_get_robot_pose()
 
 
     bearing_error = math.atan2( (target_pose[1] - pose_y), (target_pose[0] - pose_x) ) - pose_theta
@@ -261,6 +261,7 @@ def EKF_predict(u, Rt):
 
 
 def EKF_update(obs, c_prob, Qt):
+    global cov, mu
     N = len(mu)
     
     for [r, theta, j] in obs:
@@ -302,10 +303,20 @@ def EKF_update(obs, c_prob, Qt):
             cov = (np.eye(N)-K.dot(H)).dot(cov)
     
     print('Updated location\t x: {0:.2f} \t y: {1:.2f} \t theta: {2:.2f}'.format(mu[0][0],mu[1][0],mu[2][0]))
-    return mu, cov, c_prob
+    return mu, cov
 
 def move(u):
-    lspeed, rspeed = get_wheel_speeds(u)
+    motion_noise = np.matmul(np.random.randn(1,3), Rt)[0]
+    [dtrans, drot1, drot2] = u[:3] + motion_noise
+    
+    x = [pose_x, pose_y, pose_theta]
+    x_new = x[0] + dtrans*np.cos(x[2]+drot1)
+    y_new = x[1] + dtrans*np.sin(x[2]+drot1)
+    theta_new = (x[2] + drot1 + drot2 + np.pi) % (2*np.pi) - np.pi
+    
+    x_true = [x_new, y_new, theta_new]
+
+    lspeed, rspeed = get_wheel_speeds(x_true)
     print("lspeed: ", lspeed, "rspeed: ", rspeed)
     leftMotor.setVelocity(lspeed)
     rightMotor.setVelocity(rspeed)
@@ -342,7 +353,7 @@ def main():
     # Sensor burn-in period
     for i in range(10): robot.step(SIM_TIMESTEP)
 
-    start_pose = csci3302_lab5_supervisor.supervisor_get_robot_pose()
+    start_pose = SLAM_controller_supervisor.supervisor_get_robot_pose()
     pose_x, pose_y, pose_theta = start_pose
 
     #Init
@@ -364,22 +375,30 @@ def main():
         last_odometry_update_time = robot.getTime()
         print("Current pose: [%5f, %5f, %5f]" % (pose_x, pose_y, pose_theta))
 
+        if state == "":
+            pass
         #Move
-        move(u)
-
+        elif state == "move":
+            move(u)
         #Sense
-        sense()
-
-
+        elif state == "sense":
+            sense()
         #Predict
-        mu_new, cov = EKF_predict(u, Rt)
-        mu = np.append(mu,mu_new,axis=1)
+        elif state == "predict":
+            mu_new, cov = EKF_predict(u, Rt)
+            mu = np.append(mu,mu_new,axis=1)
         #Update
-        mu_new, cov, c_prob_new = EKF_update(lidar_obs, c_prob[:,-1].reshape(n,1), Qt)
-        mu = np.append(mu,mu_new,axis=1)
-        c_prob = np.append(c_prob, c_prob_new, axis=1)
-
-        #Plot stuffs
+        elif state == "update":
+            mu_new, cov, c_prob_new = EKF_update(lidar_obs, c_prob[:,-1].reshape(n,1), Qt)
+            mu = np.append(mu,mu_new,axis=1)
+            c_prob = np.append(c_prob, c_prob_new, axis=1)
+        else:
+            #Stop
+            print("Stopping!")
+            left_wheel_direction, right_wheel_direction = 0, 0
+            leftMotor.setVelocity(0)
+            rightMotor.setVelocity(0)    
+            break
 
 if __name__ == "__main__":
     main()
