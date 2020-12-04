@@ -186,7 +186,7 @@ OilBarrel {
   radius 0.1
 }
 OilBarrel {
-  translation -0.57 0.15 1.13
+  translation -0.491905 0.15 1.52698
   name "oil barrel(21)"
   height 0.3
   radius 0.1
