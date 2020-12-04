@@ -53,6 +53,10 @@ def supervisor_get_obstacle_positions():
             box_node = root_children_field.getMFNode(idx)
             box_coords = box_node.getField("translation").getSFVec3f()
             coords_list.append(np.array([box_coords[0], 1 - box_coords[2]]))
+        if root_children_field.getMFNode(idx).getTypeName() == "OilBarrel":
+            oil_node = root_children_field.getMFNode(idx)
+            oil_coords = oil_node.getField("translation").getSFVec3f()
+            coords_list.append(np.array([oil_coords[0], 1 - oil_coords[2]]))
 
     return coords_list
 

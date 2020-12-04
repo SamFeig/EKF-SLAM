@@ -9,6 +9,7 @@ import collections
 
 state = "predict" # Drive along the course
 USE_ODOMETRY = False # False for ground truth pose information, True for real odometry
+
 # create the Robot instance.
 SLAM_controller_supervisor.init_supervisor()
 robot = SLAM_controller_supervisor.supervisor
@@ -20,21 +21,6 @@ NUM_X_CELLS = int(MAP_BOUNDS[0] / CELL_RESOLUTIONS[0])
 NUM_Y_CELLS = int(MAP_BOUNDS[1] / CELL_RESOLUTIONS[1])
 
 world_map = np.zeros([NUM_Y_CELLS,NUM_X_CELLS])
-
-def populate_map(m):
-    obs_list = SLAM_controller_supervisor.supervisor_get_obstacle_positions()
-    obs_size = 0.06 # 6cm boxes
-    for obs in obs_list:
-        obs_coords_lower = obs - obs_size/2.
-        obs_coords_upper = obs + obs_size/2.
-        obs_coords = np.linspace(obs_coords_lower, obs_coords_upper, 10)
-        for coord in obs_coords:
-            m[transform_world_coord_to_map_coord(coord)] = 1
-        obs_coords_lower = [obs[0] - obs_size/2, obs[1] + obs_size/2.]
-        obs_coords_upper = [obs[0] + obs_size/2., obs[1] - obs_size/2.]
-        obs_coords = np.linspace(obs_coords_lower, obs_coords_upper, 10)
-        for coord in obs_coords:
-            m[transform_world_coord_to_map_coord(coord)] = 1
 
 # Ground Sensor Measurements under this threshold are black
 # measurements above this threshold can be considered white.
@@ -71,9 +57,6 @@ WHEEL_FORWARD = 1
 WHEEL_STOPPED = 0
 WHEEL_BACKWARD = -1
 
-# create the Robot instance.
-#robot = Robot()
-
 # get the time step of the current world.
 SIM_TIMESTEP = int(robot.getBasicTimeStep())
 
@@ -84,6 +67,12 @@ leftMotor.setPosition(float('inf'))
 rightMotor.setPosition(float('inf'))
 leftMotor.setVelocity(0.0)
 rightMotor.setVelocity(0.0)
+
+# Initialize and Enable the Ground Sensors
+ground_sensor_readings = [0, 0, 0]
+ground_sensors = [robot.getDistanceSensor('gs0'), robot.getDistanceSensor('gs1'), robot.getDistanceSensor('gs2')]
+for gs in ground_sensors:
+    gs.enable(SIM_TIMESTEP)
 
 # get and enable lidar 
 lidar = robot.getLidar("LDS-01")
@@ -113,6 +102,21 @@ mu = []
 mu_new = []
 cov = []
 c_prob = []
+
+def populate_map(m):
+    obs_list = SLAM_controller_supervisor.supervisor_get_obstacle_positions()
+    obs_size = 0.06 # 6cm boxes
+    for obs in obs_list:
+        obs_coords_lower = obs - obs_size/2.
+        obs_coords_upper = obs + obs_size/2.
+        obs_coords = np.linspace(obs_coords_lower, obs_coords_upper, 10)
+        for coord in obs_coords:
+            m[transform_world_coord_to_map_coord(coord)] = 1
+        obs_coords_lower = [obs[0] - obs_size/2, obs[1] + obs_size/2.]
+        obs_coords_upper = [obs[0] + obs_size/2., obs[1] - obs_size/2.]
+        obs_coords = np.linspace(obs_coords_lower, obs_coords_upper, 10)
+        for coord in obs_coords:
+            m[transform_world_coord_to_map_coord(coord)] = 1
 
 #From Lab 4
 def convert_lidar_reading_to_world_coord(lidar_bin, lidar_distance):
@@ -341,7 +345,7 @@ def update_odometry(left_wheel_direction, right_wheel_direction, time_elapsed):
     
     
 def main():
-    global robot, pose_x, pose_y, pose_theta
+    global robot, ground_sensors, ground_sensor_readings, pose_x, pose_y, pose_theta
     global leftMotor, rightMotor, SIM_TIMESTEP, WHEEL_FORWARD, WHEEL_STOPPED, WHEEL_BACKWARDS
     
     last_odometry_update_time = None
@@ -366,7 +370,11 @@ def main():
     print("c_prob: ", c_prob)
 
     # Main Control Loop:
-    while robot.step(SIM_TIMESTEP) != -1:   
+    while robot.step(SIM_TIMESTEP) != -1:
+        # Read ground sensor values
+        for i, gs in enumerate(ground_sensors):
+            ground_sensor_readings[i] = gs.getValue()
+        loop_closure_detection_time = 0
         
         if last_odometry_update_time is None:
             last_odometry_update_time = robot.getTime()
@@ -399,6 +407,15 @@ def main():
             leftMotor.setVelocity(0)
             rightMotor.setVelocity(0)    
             break
+
+        # Loop Closure
+            if False not in [ground_sensor_readings[i] < GROUND_SENSOR_THRESHOLD for i in range(3)]:
+                loop_closure_detection_time += SIM_TIMESTEP / 1000.
+                if loop_closure_detection_time > 0.1:
+                    pose_x, pose_y, pose_theta = SLAM_controller_supervisor.supervisor_get_robot_pose()
+                    loop_closure_detection_time = 0
+            else:
+                loop_closure_detection_time = 0
 
 if __name__ == "__main__":
     main()
