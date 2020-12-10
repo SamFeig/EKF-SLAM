@@ -1,11 +1,27 @@
 # SLAM Controller
 
 import math
+import random
 import copy
 from controller import Robot, Motor, DistanceSensor
 import SLAM_controller_supervisor
 import numpy as np
 import collections
+
+class Landmark:
+    """
+    Landmark class
+    """
+    def __init__(self, pos, r, bearing, line, slam_id):
+        self.pos = pos
+        self.total_times_observed = 0
+        self.range = r
+        self.bearing = bearing
+        self.line = line
+        self.slam_id = slam_id
+        self.range_error = self.bearing_error = -100 #initial value to show this is not yet set
+
+
 
 state = "predict" # Drive along the course
 USE_ODOMETRY = False # False for ground truth pose information, True for real odometry
@@ -28,6 +44,13 @@ GROUND_SENSOR_THRESHOLD = 600 # Light intensity units
 LIDAR_SENSOR_MAX_RANGE = 3. # Meters
 LIDAR_ANGLE_BINS = 21 # 21 Bins to cover the angular range of the lidar, centered at 10
 LIDAR_ANGLE_RANGE = 1.5708 # 90 degrees, 1.5708 radians
+
+#RANSAC values
+MAX_TRIALS = 100 # Max times to run algorithm
+MAX_SAMPLE = 8 # Randomly select X points
+MIN_LINE_POINTS = 5 # If less than 5 points left, stop algorithm
+RANSAC_TOLERANCE = 0.05 # If point is within 5 cm of line, it is part of the line
+RANSAC_CONSENSUS = 5 # At least 5 points required to determine if a line
 
 # Robot Pose Values
 pose_x = 0
@@ -132,7 +155,7 @@ def convert_lidar_reading_to_world_coord(lidar_bin, lidar_distance):
     
     #No detection
     if(lidar_distance > LIDAR_SENSOR_MAX_RANGE):# or lidar_distance > math.sqrt(2)):
-        return
+        return None
     
     #Lidar centered at robot 0,0 so no translation needed
     #Convert lidar -> robot adding math.pi/2 to fix direction
@@ -144,6 +167,116 @@ def convert_lidar_reading_to_world_coord(lidar_bin, lidar_distance):
     y = math.sin( pose_theta ) * bQ_x + math.cos( pose_theta ) * bQ_y + pose_y
     #print(x,y)
     return x, y
+
+def perform_least_squares_line_estimate(lidar_world_coords, selected_points):
+    """
+    @param lidar_world_coords: List of world coordinates read from lidar data (tuples of the form [x, y])
+    @param selected_points: Indicies of the points selected for this least squares line estimation
+    @return m, b: Slope and intercept for line estimated from data - y = mx + b
+    """
+    sum_y = sum_yy = sum_x = sum_xx = sum_yx = 0 #Sums of y coordinates, y^2 for each coordinate, x coordinates, x^2 for each coordinate, and y*x for each point
+
+    for point in selected_points:
+        world_coord = lidar_world_coords[point]
+
+        sum_y += world_coord[1]
+        sum_yy += world_coord[1]**2
+        sum_x += world_coord[0]
+        sum_xx += world_coord[0]**2
+        sum_yx += world_coord[0] * world_coord[1]
+
+    num_points = len(selected_points)
+    b = (sum_y*sum_xx - sum_x*sum_yx) / (num_points*sum_xx - sum_x**2)
+    m = (num_points*sum_yx - sum_x*sum_y) / (num_points*sum_xx - sum_x**2)
+
+    return m, b
+
+def distance_to_line(x, y, m, b):
+    """
+    @param x: x coordinate of point to find distance to line from
+    @param y: y coordinate of point to find distance to line from
+    @param m: slope of line
+    @param b: intercept of line
+    @return dist: the distance from the given point coordinates to the given line
+    """
+
+    #Line perpendicular to input line crossing through input point - m*m_o = -1 and y=m_o*x + b_o => b_o = y - m_o*x
+    m_o = -1.0/m
+    b_o = y - m_o*x
+
+    #Intersection point between y = m*x + b and x = m_o*x + b_o
+    p_x = (b - b_o) / (m_o - m)
+    p_y = ((m_o * (b - b_o)) / (m_o - m)) + b_o
+
+    return math.dist([x,y], [p_x,p_y])
+
+
+
+def extract_line_landmarks(lidar_world_coords):
+    """
+    @param lidar_world_coords: List of world coordinates read from lidar data (tuples of the form [x, y])
+    @return found_landmarks: list of landmarks found through the RANSAC done on the lidar data
+    """
+
+    found_lines = [] #list of tuples of the form [m, b] of detected lines
+
+    linepoints = [] #list of laser data points not yet associated to a found line
+
+    tempLandmarks = [] #list to keep track of found landmarks from lines
+
+    for i in range(lidar_world_coords):
+        linepoints.append(i)
+    
+    num_trials = 0
+    while (num_trials < MAX_TRIALS and len(linepoints) >= MIN_LINE_POINTS):
+        rand_selected_points = []
+
+        #randomly choose up to MAX_SAMPLE points for the least squares
+        for i in range(min(MAX_SAMPLE, len(linepoints))):
+            temp = -1
+            new_point = False
+            while not new_point:
+                temp = random.randint(0, len(linepoints)-1) #generate a random integer between 0 and our total number of remaining line points to choose from
+                if linepoints[temp] not in rand_selected_points:
+                    new_point = True
+            rand_selected_points.append(linepoints[temp])
+        
+        #Now compute a line based on the randomly selected points
+        m, b = perform_least_squares_line_estimate(lidar_world_coords, rand_selected_points)
+
+        consensus_points = [] # points matching along the found line
+        new_linepoints = [] # points not matching along the found line, if we say the line is a landmark, these are our new set of unmatched points
+
+        for point in linepoints:
+            curr_point = lidar_world_coords[point]
+            #distance to line from the point
+            dist = distance_to_line(curr_point[0], curr_point[1], m, b)
+
+            if dist < RANSAC_TOLERANCE:
+                consensus_points.append(point)
+            else:
+                new_linepoints.append(point)
+        
+        if len(consensus_points) >= RANSAC_CONSENSUS:
+            #Calculate an updated line based on every point within the consensus
+            m, b = perform_least_squares_line_estimate(lidar_world_coords, consensus_points)
+
+            #add to found lines
+            found_lines.append([m,b])
+
+            #rewrite the linepoints as the linepoints that didn't match with this line to only search unmatched points for lines
+            linepoints = new_linepoints.copy()
+
+            #restart number of trials
+            num_trials = 0
+        else:
+            num_trials += 1
+    
+    #Now we'll calculate the point closest to the origin for each line found and add these as found landmarks
+
+
+
+
 
 #From Lab 5
 def transform_world_coord_to_map_coord(world_coord):
@@ -338,7 +471,9 @@ def move(target_pose):
 
 def generate_obs(lt):
     lidar_data = lidar.getRangeImage()
-    print(lidar_data)
+
+    #convert lidar to world locations
+
 
 
     #Run RANSAC on lidar_data
@@ -433,13 +568,13 @@ def main():
             break
 
         # Loop Closure
-            if False not in [ground_sensor_readings[i] < GROUND_SENSOR_THRESHOLD for i in range(3)]:
-                loop_closure_detection_time += SIM_TIMESTEP / 1000.
-                if loop_closure_detection_time > 0.1:
-                    pose_x, pose_y, pose_theta = SLAM_controller_supervisor.supervisor_get_robot_pose()
-                    loop_closure_detection_time = 0
-            else:
+        if False not in [ground_sensor_readings[i] < GROUND_SENSOR_THRESHOLD for i in range(3)]:
+            loop_closure_detection_time += SIM_TIMESTEP / 1000.
+            if loop_closure_detection_time > 0.1:
+                pose_x, pose_y, pose_theta = SLAM_controller_supervisor.supervisor_get_robot_pose()
                 loop_closure_detection_time = 0
+        else:
+            loop_closure_detection_time = 0
 
 if __name__ == "__main__":
     main()
