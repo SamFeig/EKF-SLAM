@@ -8,22 +8,6 @@ import SLAM_controller_supervisor
 import numpy as np
 import collections
 
-class Landmark:
-    """
-    Landmark class
-    """
-    def __init__(self, pos, lm_range, lm_bearing, line, slam_id, range_error, bearing_error):
-        self.pos = pos
-        self.total_times_observed = 0
-        self.range = lm_range
-        self.bearing = lm_bearing
-        self.line = line
-        self.slam_id = slam_id
-        self.range_error = range_error
-        self.bearing_error = bearing_error
-
-
-
 state = "predict" # Drive along the course
 USE_ODOMETRY = False # False for ground truth pose information, True for real odometry
 
@@ -52,7 +36,6 @@ MAX_SAMPLE = 8 # Randomly select X points
 MIN_LINE_POINTS = 5 # If less than 5 points left, stop algorithm
 RANSAC_TOLERANCE = 0.05 # If point is within 5 cm of line, it is part of the line
 RANSAC_CONSENSUS = 5 # At least 5 points required to determine if a line
-MIN_OBSERVATIONS = 2 #Need to observe a landmark 
 
 # Robot Pose Values
 pose_x = 0
@@ -129,8 +112,8 @@ mu_new = []
 cov = []
 #c_prob = []
 
-#Landmarks
-landmarks = []
+#Stored global [x, y, j] for observed landmarks to check if the landmark has been seen before (is within 0.05 cm radius of previous x, y)
+landmark_globals = []
 
 def populate_map(m):
     obs_list = SLAM_controller_supervisor.supervisor_get_obstacle_positions()
@@ -294,56 +277,41 @@ def distance_to_line(x, y, m, b):
     p_y = ((m_o * (b - b_o)) / (m_o - m)) + b_o
 
     return math.dist([x,y], [p_x,p_y])
-
-def get_closest_association(lm):
-    #Find the closest landmark to given landmark in the already stored list of landmarks
-    least_distance = float("inf")
-    closest_landmark = 0
-    slam_id = 0
-    times_observed = 0
-    for landmark in landmarks:
-        if landmark.total_times_observed > MIN_OBSERVATIONS:
-            temp = math.dist(lm.pose, landmark.pose)
-            if(temp < least_distance):
-                least_distance = temp
-                closest_landmark = landmark.slam_id
-    
-    if least_distance == float("inf"):
-        slam_id = -1
-    else:
-        slam_id = closest_landmark
-        times_observed = landmark[closest_landmark].total_times_observed
-    
-    return slam_id, times_observed
         
 
+
 def get_line_landmark(line):
+    global mu
     #slope perpendicular to input line
     m_o = -1.0 / line[0]
 
     #landmark position
     lm_x = line[1] / (m_o - line[0])
     lm_y = (m_o*line[1]) / (m_o - line[0])
+    lm_j = 0
 
-    lm_range = math.dist([lm_x,lm_y], [pose_x,pose_y])
-    lm_bearing = math.atan((lm_y - pose_y) / (lm_x - pose_x)) - pose_theta
+    found = False
+    for [x, y, j] in landmark_globals:
+        if math.dist([x, y], [lm_x, lm_y]) <= 0.05:
+            lm_j = j
+            found = True
+            break
+        else:
+            lm_j += 1
 
-    b_o = pose_y - m_o*pose_x
+    #If we didn't match the landmark to a previously found one and we're over the cap for new landmarks, return none to not calculate with this landmark
+    if not found and len(landmark_globals) >= n:
+        return None
+    #Otherwise, add it to our landmarks
+    elif not found and len(landmark_globals) < n:
+        landmark_globals.append([lm_x, lm_y, lm_j])
 
-    #Get intersection between y = m*x + b and y = m_o*x + b_o
-    # m_o*x + b_o = m*x + b => m_o*x - m*x = b - b_o => x = (b - b_o) / (m_o - m), y = m_o*((b - b_o) / (m_o - m)) + b_o
-    p_x = (line[1] - b_o) / (m_o - line[0])
-    p_y = ((m_o*(line[1] - b_o) / (m_o - line[0]))) + b_o
+    #convert to robot-relative positioning with radius from the robot and theta relative to robot
+    r = math.dist([lm_x, lm_y], [mu[0][0], mu[1][0]])
+    theta = math.atan2(lm_x, lm_y)
+    theta = theta - mu[2][0]
 
-    range_error = math.dist([pose_x,pose_y], [p_x,p_y])
-    bearing_error = math.atan((p_y - pose_y) / (p_x - pose_x)) - pose_theta
-
-    new_landmark = Landmark([lm_x, lm_y], lm_range, lm_bearing, line, 0, range_error, bearing_error)
-
-    #Associate with closest landmark
-    new_landmark.slam_id, new_landmark.total_times_observed = get_closest_association(new_landmark)
-
-    return new_landmark
+    return [r, theta, lm_j]
 
 def extract_line_landmarks(lidar_world_coords):
     """
@@ -355,7 +323,7 @@ def extract_line_landmarks(lidar_world_coords):
 
     linepoints = [] #list of laser data points not yet associated to a found line
 
-    found_landmarks = [] #list to keep track of found landmarks from lines
+    found_landmarks = [] #list to keep track of found landmarks from lines, stored as [r, theta, j] relative to robot
 
     for i in range(lidar_world_coords):
         linepoints.append(i)
@@ -407,7 +375,9 @@ def extract_line_landmarks(lidar_world_coords):
     
     #Now we'll calculate the point closest to the origin for each line found and add these as found landmarks
     for line in found_lines:
-        found_landmarks.append(get_line_landmark(line))
+        new_landmark = get_line_landmark(line)
+        if new_landmark is not None:
+            found_landmarks.append(new_landmark)
     
     return found_landmarks
 
@@ -525,7 +495,7 @@ def move(target_pose):
 
     return u
 
-def generate_obs(lt):
+def generate_obs():
     lidar_data = lidar.getRangeImage()
 
     #convert lidar to world locations
@@ -536,9 +506,7 @@ def generate_obs(lt):
             lidar_readings.append(lidar_found_loc)
 
     #Run RANSAC on lidar_data
-    extracted_landmarks = extract_line_landmarks(lidar_readings)
-
-    #Itterate through all landmarks, determine which is most likely based on location
+    obs = extract_line_landmarks(lidar_readings)
 
     return obs #[r, theta, j]
 
