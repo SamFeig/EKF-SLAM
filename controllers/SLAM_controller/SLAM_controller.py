@@ -34,7 +34,7 @@ LIDAR_ANGLE_RANGE = 1.5708 # 90 degrees, 1.5708 radians
 MAX_TRIALS = 100 # Max times to run algorithm
 MAX_SAMPLE = 8 # Randomly select X points
 MIN_LINE_POINTS = 5 # If less than 5 points left, stop algorithm
-RANSAC_TOLERANCE = 0.025 # If point is within 2.5 cm of line, it is part of the line
+RANSAC_TOLERANCE = 0.025 # If point is within 5 cm of line, it is part of the line
 RANSAC_CONSENSUS = 5 # At least 5 points required to determine if a line
 
 # Robot Pose Values
