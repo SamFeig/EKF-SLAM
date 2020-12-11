@@ -8,7 +8,7 @@ import SLAM_controller_supervisor
 import numpy as np
 import collections
 
-state = "predict" # Drive along the course
+state = "move" # Drive along the course
 USE_ODOMETRY = False # False for ground truth pose information, True for real odometry
 
 # create the Robot instance.
@@ -106,11 +106,9 @@ lidar_offsets = np.linspace(-step*(LIDAR_ANGLE_BINS//2), step*(LIDAR_ANGLE_BINS/
 print(lidar_offsets)
 
 #EKF Vars
-n = 50 # number of static landmarks
+n = 8 # number of static landmarks
 mu = []
-mu_new = []
 cov = []
-#c_prob = []
 
 #Stored global [x, y, j] for observed landmarks to check if the landmark has been seen before (is within 0.05 cm radius of previous x, y)
 landmark_globals = []
@@ -382,7 +380,7 @@ def extract_line_landmarks(lidar_world_coords):
     return found_landmarks
 
 def EKF_init(x_init):
-    global Rt, Qt, mu, mu_new, cov#, c_prob
+    global Rt, Qt, mu, cov
 
     Rt = 5*np.array([[0.01,0,0],
                [0,0.01,0],
@@ -391,23 +389,18 @@ def EKF_init(x_init):
                [0,0.01]])
 
     mu = np.append(np.array([x_init]).T,np.zeros((2*n,1)),axis=0)
-    mu_new = mu
 
     cov = 1e6*np.eye(2*n+3)
-    #Init tobot to [0,0,0]
-    #cov[:3,:3] = np.zeros((3,3))
 
     #Init robot to known truth pos
     cov[:3,:3] = np.eye(3,3)*np.array(x_init).T
 
-    #c_prob = 0.5*np.ones((n,1))
-
 def EKF_predict(u, Rt):
-    global mu
-    n = len(mu)
+    #global mu
+    #n = len(mu)
 
     # Define motion model f(mu,u)
-    [dtrans, drot1, drot2] = u # v_t/w_t, delta_t
+    [dtrans, drot1, drot2] = u
     motion = np.array([[dtrans*np.cos(mu[2][0]+drot1)],
                        [dtrans*np.sin(mu[2][0]+drot1)],
                        [drot1 + drot2]])
@@ -430,8 +423,6 @@ def EKF_predict(u, Rt):
 
 
 def EKF_update(obs, Qt):
-    global cov, mu
-    N = len(mu)
     
     for [r, theta, j] in obs:
         j = int(j)
@@ -450,7 +441,7 @@ def EKF_update(obs, Qt):
         z_hat = np.array([[sq], [z_theta-mu[2][0]]])
         
         # calculate Jacobian
-        F = np.zeros((5,N))
+        F = np.zeros((5,n))
         F[:3,:3] = np.eye(3)
         F[3,2*j+3] = 1
         F[4,2*j+4] = 1
@@ -466,14 +457,13 @@ def EKF_update(obs, Qt):
         z_dif = (z_dif + np.pi) % (2*np.pi) - np.pi
         
         # update state vector and covariance matrix        
-        mu = mu + K.dot(z_dif)
-        cov = (np.eye(N)-K.dot(H)).dot(cov)
+        mu_new = mu + K.dot(z_dif)
+        cov_new = (np.eye(n)-K.dot(H)).dot(cov)
     
     print('Updated location\t x: {0:.2f} \t y: {1:.2f} \t theta: {2:.2f}'.format(mu[0][0],mu[1][0],mu[2][0]))
-    return mu, cov
+    return mu_new, cov_new
 
 def move(target_pose):
-    global mu
     '''
     motion_noise = np.matmul(np.random.randn(1,3), Rt)[0]
     [dtrans, drot1, drot2] = u[:3] + motion_noise
@@ -525,9 +515,9 @@ def update_odometry(left_wheel_direction, right_wheel_direction, time_elapsed):
     
     
 def main():
-    global robot, ground_sensors, ground_sensor_readings, pose_x, pose_y, pose_theta
+    global robot, ground_sensors, ground_sensor_readings, pose_x, pose_y, pose_theta, state
     global leftMotor, rightMotor, SIM_TIMESTEP, WHEEL_FORWARD, WHEEL_STOPPED, WHEEL_BACKWARDS
-    global cov, cov_new, Rt, Qt, mu, mu_new
+    global cov, Rt, Qt, mu
     
     last_odometry_update_time = None
 
@@ -541,6 +531,7 @@ def main():
                   [-0.486042,  0.158664,   4.711667],
                   [-0.345818,  0.018178,  -0.783037],
                   [-0.03,     -0.05,       0]         ]
+    pos_idx = 0
     
     # Keep track of which direction each wheel is turning
     left_wheel_direction = WHEEL_STOPPED
@@ -555,6 +546,11 @@ def main():
 
     lidar_obs = []
     u = [0, 0, 0] #State vector
+    #Tolerances for reaching waypoint state
+    x_tol = 0.05
+    y_tol = 0.05
+    theta_tol = 0.05
+
     #Init with known start location
     EKF_init(start_pose)
 
@@ -575,28 +571,43 @@ def main():
         update_odometry(left_wheel_direction, right_wheel_direction, time_elapsed)
         last_odometry_update_time = robot.getTime()
         print("Current pose: [%5f, %5f, %5f]" % (pose_x, pose_y, pose_theta))
-        state = "move"
-        if state == "":
-            pass
+
+        #Get next position in path to traverse
+        if pos_idx == len(robot_path):
+            pos_idx = 0
+        target_pose = robot_path[pos_idx]
+
         #Move
-        elif state == "move":
+        if state == "move":
             #Move and update state vector for EKF
-            new_pose = [0.1, -0.24, 0]
-            u = move(new_pose)
+            u = move(target_pose)
             print("U: ", u)
+
+            #At waypoint location
+            if (abs(pose_x - target_pose[0]) < x_tol and 
+                abs(pose_y - target_pose[1]) < y_tol and
+                abs(pose_theta - target_pose[2]) < theta_tol): 
+                
+                print("\n****At Waypoint****\n")
+                leftMotor.setVelocity(0)
+                rightMotor.setVelocity(0)
+                pos_idx += 1
+                state = 'sense'
         #Sense
         elif state == "sense":
-            lidar_obs = generate_obs
+            lidar_obs = generate_obs()
+            state = 'predict'
 
         #Predict
         elif state == "predict":
             mu_new, cov = EKF_predict(u, Rt)
             mu = np.append(mu,mu_new,axis=1)
+            state = 'update'
         #Update
         elif state == "update":
-            mu_new, cov = EKF_update(lidar_obs, Qt)#EKF_update(lidar_obs, c_prob[:,-1].reshape(n,1), Qt)
+            mu_new, cov = EKF_update(lidar_obs, Qt)
             mu = np.append(mu,mu_new,axis=1)
-            #c_prob = np.append(c_prob, c_prob_new, axis=1)
+            state = 'move'
         else:
             #Stop
             print("Stopping!")
@@ -610,6 +621,10 @@ def main():
             loop_closure_detection_time += SIM_TIMESTEP / 1000.
             if loop_closure_detection_time > 0.1:
                 pose_x, pose_y, pose_theta = SLAM_controller_supervisor.supervisor_get_robot_pose()
+                #Update current location to ground truth
+                u = move([pose_x, pose_y, pose_theta])
+                mu[0][0], mu[1][0], mu[2][0] = pose_x, pose_y, pose_theta
+                state = 'sense'
                 loop_closure_detection_time = 0
         else:
             loop_closure_detection_time = 0
