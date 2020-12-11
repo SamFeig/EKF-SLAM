@@ -5,3 +5,5 @@ worlds/.final_project_SLAM.wbproj
 /__pycache__/
 
 controllers/SLAM_controller/__pycache__/
+
+*.cache

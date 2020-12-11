@@ -28,14 +28,17 @@ RectangleArena {
   wallHeight 0.01
 }
 E-puck {
+  hidden translation_1 -0.025999999878426605 0.020004133936414648 -3.790433453221276e-10
+  hidden rotation_1 -0.002682615003075533 -9.196726304115058e-05 -0.999996397552895 1.032382731180714e-07
+  hidden translation_2 0.02600000000684921 0.020004009295663844 -3.8099853133521933e-10
+  hidden rotation_2 -0.002439122983182107 9.518161664400701e-05 0.9999970208053286 1.032382731180714e-07
   translation -0.0500001 0 1.05
   rotation 0 1 0 -1.5707953071795862
   name "EPUCK"
   controller "SLAM_controller"
   supervisor TRUE
   turretSlot [
-    RobotisLds01 {
-      noise 0
+    Lab4RobotisLds01 {
     }
   ]
   groundSensorsSlot [
