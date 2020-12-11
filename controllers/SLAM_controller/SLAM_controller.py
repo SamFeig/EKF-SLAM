@@ -12,14 +12,15 @@ class Landmark:
     """
     Landmark class
     """
-    def __init__(self, pos, r, bearing, line, slam_id):
+    def __init__(self, pos, lm_range, lm_bearing, line, slam_id, range_error, bearing_error):
         self.pos = pos
         self.total_times_observed = 0
-        self.range = r
-        self.bearing = bearing
+        self.range = lm_range
+        self.bearing = lm_bearing
         self.line = line
         self.slam_id = slam_id
-        self.range_error = self.bearing_error = -100 #initial value to show this is not yet set
+        self.range_error = range_error
+        self.bearing_error = bearing_error
 
 
 
@@ -51,6 +52,7 @@ MAX_SAMPLE = 8 # Randomly select X points
 MIN_LINE_POINTS = 5 # If less than 5 points left, stop algorithm
 RANSAC_TOLERANCE = 0.05 # If point is within 5 cm of line, it is part of the line
 RANSAC_CONSENSUS = 5 # At least 5 points required to determine if a line
+MIN_OBSERVATIONS = 2 #Need to observe a landmark 
 
 # Robot Pose Values
 pose_x = 0
@@ -126,6 +128,9 @@ mu = []
 mu_new = []
 cov = []
 #c_prob = []
+
+#Landmarks
+landmarks = []
 
 def populate_map(m):
     obs_list = SLAM_controller_supervisor.supervisor_get_obstacle_positions()
@@ -210,7 +215,55 @@ def distance_to_line(x, y, m, b):
 
     return math.dist([x,y], [p_x,p_y])
 
+def get_closest_association(lm):
+    #Find the closest landmark to given landmark in the already stored list of landmarks
+    least_distance = float("inf")
+    closest_landmark = 0
+    slam_id = 0
+    times_observed = 0
+    for landmark in landmarks:
+        if landmark.total_times_observed > MIN_OBSERVATIONS:
+            temp = math.dist(lm.pose, landmark.pose)
+            if(temp < least_distance):
+                least_distance = temp
+                closest_landmark = landmark.slam_id
+    
+    if least_distance == float("inf"):
+        slam_id = -1
+    else:
+        slam_id = closest_landmark
+        times_observed = landmark[closest_landmark].total_times_observed
+    
+    return slam_id, times_observed
+        
 
+def get_line_landmark(line):
+    #slope perpendicular to input line
+    m_o = -1.0 / line[0]
+
+    #landmark position
+    lm_x = line[1] / (m_o - line[0])
+    lm_y = (m_o*line[1]) / (m_o - line[0])
+
+    lm_range = math.dist([lm_x,lm_y], [pose_x,pose_y])
+    lm_bearing = math.atan((lm_y - pose_y) / (lm_x - pose_x)) - pose_theta
+
+    b_o = pose_y - m_o*pose_x
+
+    #Get intersection between y = m*x + b and y = m_o*x + b_o
+    # m_o*x + b_o = m*x + b => m_o*x - m*x = b - b_o => x = (b - b_o) / (m_o - m), y = m_o*((b - b_o) / (m_o - m)) + b_o
+    p_x = (line[1] - b_o) / (m_o - line[0])
+    p_y = ((m_o*(line[1] - b_o) / (m_o - line[0]))) + b_o
+
+    range_error = math.dist([pose_x,pose_y], [p_x,p_y])
+    bearing_error = math.atan((p_y - pose_y) / (p_x - pose_x)) - pose_theta
+
+    new_landmark = Landmark([lm_x, lm_y], lm_range, lm_bearing, line, 0, range_error, bearing_error)
+
+    #Associate with closest landmark
+    new_landmark.slam_id, new_landmark.total_times_observed = get_closest_association(new_landmark)
+
+    return new_landmark
 
 def extract_line_landmarks(lidar_world_coords):
     """
@@ -222,7 +275,7 @@ def extract_line_landmarks(lidar_world_coords):
 
     linepoints = [] #list of laser data points not yet associated to a found line
 
-    tempLandmarks = [] #list to keep track of found landmarks from lines
+    found_landmarks = [] #list to keep track of found landmarks from lines
 
     for i in range(lidar_world_coords):
         linepoints.append(i)
@@ -273,9 +326,10 @@ def extract_line_landmarks(lidar_world_coords):
             num_trials += 1
     
     #Now we'll calculate the point closest to the origin for each line found and add these as found landmarks
-
-
-
+    for line in found_lines:
+        found_landmarks.append(get_line_landmark(line))
+    
+    return found_landmarks
 
 
 #From Lab 5
@@ -473,7 +527,6 @@ def generate_obs(lt):
     lidar_data = lidar.getRangeImage()
 
     #convert lidar to world locations
-
 
 
     #Run RANSAC on lidar_data
