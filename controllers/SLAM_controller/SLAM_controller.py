@@ -323,7 +323,7 @@ def extract_line_landmarks(lidar_world_coords):
 
     found_landmarks = [] #list to keep track of found landmarks from lines, stored as [r, theta, j] relative to robot
 
-    for i in range(lidar_world_coords):
+    for i in range(len(lidar_world_coords)):
         linepoints.append(i)
     
     num_trials = 0
