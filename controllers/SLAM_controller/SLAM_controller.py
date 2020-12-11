@@ -26,15 +26,15 @@ world_map = np.zeros([NUM_Y_CELLS,NUM_X_CELLS])
 # Ground Sensor Measurements under this threshold are black
 # measurements above this threshold can be considered white.
 GROUND_SENSOR_THRESHOLD = 600 # Light intensity units
-LIDAR_SENSOR_MAX_RANGE = 3. # Meters
+LIDAR_SENSOR_MAX_RANGE = 5.#3 # Meters
 LIDAR_ANGLE_BINS = 21 # 21 Bins to cover the angular range of the lidar, centered at 10
 LIDAR_ANGLE_RANGE = 1.5708 # 90 degrees, 1.5708 radians
 
 #RANSAC values
-MAX_TRIALS = 100 # Max times to run algorithm
-MAX_SAMPLE = 8 # Randomly select X points
+MAX_TRIALS = 1000 # Max times to run algorithm
+MAX_SAMPLE = 10 # Randomly select X points
 MIN_LINE_POINTS = 5 # If less than 5 points left, stop algorithm
-RANSAC_TOLERANCE = 0.025 # If point is within 5 cm of line, it is part of the line
+RANSAC_TOLERANCE = 0.25 # If point is within 5 cm of line, it is part of the line
 RANSAC_CONSENSUS = 5 # At least 5 points required to determine if a line
 
 # Robot Pose Values
@@ -101,8 +101,7 @@ print(lidar_data)
 
 step = LIDAR_ANGLE_RANGE/LIDAR_ANGLE_BINS
 
-lidar_offsets = np.linspace(-step*(LIDAR_ANGLE_BINS//2), step*(LIDAR_ANGLE_BINS//2), LIDAR_ANGLE_BINS)
-#lidar_offsets = -1 * lidar_offsets
+lidar_offsets = np.linspace(step*(LIDAR_ANGLE_BINS//2), -step*(LIDAR_ANGLE_BINS//2), LIDAR_ANGLE_BINS)
 print(lidar_offsets)
 
 #EKF Vars
@@ -129,7 +128,15 @@ def populate_map(m):
         obs_coords = np.linspace(obs_coords_lower, obs_coords_upper, 10)
         for coord in obs_coords:
             m[transform_world_coord_to_map_coord(coord)] = 1
-
+            
+def get_bounded_theta(theta):
+    '''
+    Returns theta bounded in [-PI, PI]
+    '''
+    while theta > math.pi: theta -= 2.*math.pi
+    while theta < -math.pi: theta += 2.*math.pi
+    return theta
+    
 #From Lab 4
 def convert_lidar_reading_to_world_coord(lidar_bin, lidar_distance):
     """
@@ -292,7 +299,7 @@ def get_line_landmark(line):
 
     found = False
     for [x, y, j] in landmark_globals:
-        if math.dist([x, y], [lm_x, lm_y]) <= 0.05:
+        if math.dist([x, y], [lm_x, lm_y]) <= 0.25:
             lm_j = j
             found = True
             break
@@ -309,7 +316,7 @@ def get_line_landmark(line):
     #convert to robot-relative positioning with radius from the robot and theta relative to robot
     r = math.dist([lm_x, lm_y], [mu[0][0], mu[1][0]])
     theta = math.atan2(lm_x, lm_y)
-    theta = theta - mu[2][0]
+    theta = get_bounded_theta(theta - mu[2][0])
 
     return [r, theta, lm_j]
 
@@ -407,7 +414,7 @@ def EKF_predict(u, Rt):
     [dtrans, drot1, drot2] = u
     motion = np.array([[dtrans*np.cos(mu[2][0]+drot1)],
                        [dtrans*np.sin(mu[2][0]+drot1)],
-                       [drot1 + drot2]])
+                       [get_bounded_theta(drot1 + drot2)]])
     F = np.append(np.eye(3), np.zeros((3,2*n)),axis=1)
     
     #print(np.shape(F.T))
@@ -417,8 +424,8 @@ def EKF_predict(u, Rt):
     mu_bar = mu + (F.T).dot(motion)
     
     # Define motion model Jacobian
-    J = np.array([[0,0,-dtrans*np.sin(mu[2][0]+drot1)],
-                  [0,0,dtrans*np.cos(mu[2][0]+drot1)],
+    J = np.array([[0,0,-dtrans*np.sin(get_bounded_theta(mu[2][0]+drot1))],
+                  [0,0,dtrans*np.cos(get_bounded_theta(mu[2][0]+drot1))],
                   [0,0,0]])
     G = np.eye(2*n+3) + (F.T).dot(J).dot(F)
     
@@ -430,65 +437,59 @@ def EKF_predict(u, Rt):
 
 
 def EKF_update(obs, Qt):
-    global mu_new, cov_new
+    global mu, mu_new, cov_new
     
     for [r, theta, j] in obs:
         j = int(j)
+        print([r, theta, j])
         #Landmark has not been observed before
         if cov[2*j+3][2*j+3] >= 1e6 and cov[2*j+4][2*j+4] >= 1e6:
+            print("First time observing landmark %d" % (j))
             # define landmark estimate as current measurement
-            mu[2*j+3][0] = mu[0][0] + r*np.cos(theta+mu[2][0])
-            mu[2*j+4][0] = mu[1][0] + r*np.sin(theta+mu[2][0])
+            mu[2*j+3][0] = mu[0][0] + r*np.cos(get_bounded_theta(theta+mu[2][0]))
+            mu[2*j+4][0] = mu[1][0] + r*np.sin(get_bounded_theta(theta+mu[2][0]))
 
         #Landmark has been seen before, use past values
         # compute expected observation
         delta = np.array([mu[2*j+3][0] - mu[0][0], mu[2*j+4][0] - mu[1][0]])
+        #print("delta: ", delta)
         q = delta.T.dot(delta)
         sq = np.sqrt(q)
         z_theta = np.arctan2(delta[1],delta[0])
-        z_hat = np.array([[sq], [z_theta-mu[2][0]]])
+        z_hat = np.array([[sq], [get_bounded_theta(z_theta-mu[2][0])]])
         
         # calculate Jacobian
-        F = np.zeros((5,n))
+        F = np.zeros((5,2*n+3))
         F[:3,:3] = np.eye(3)
         F[3,2*j+3] = 1
         F[4,2*j+4] = 1
+        #print("F: ", F)
         H_low = np.array([[-sq*delta[0], -sq*delta[1], 0, sq*delta[0], sq*delta[1]],
                         [delta[1], -delta[0], -q, -delta[1], delta[0]]], dtype='float')
+        #print("H_low: ", H_low)
         H = 1/q*H_low.dot(F)
+        #print("H: ", H)
 
         # calculate Kalman gain        
         K = cov.dot(H.T).dot(np.linalg.inv(H.dot(cov).dot(H.T)+Qt))
-        
+        #print("K: ", K)
         # calculate difference between expected and real observation
         z_dif = np.array([[r],[theta]])-z_hat
+        #print("z_diff: ", z_dif)
         z_dif = (z_dif + np.pi) % (2*np.pi) - np.pi
         
-        #print("K: ", K.dot(z_dif))
+        #print("K_dot: ", K.dot(z_dif))
         
         # update state vector and covariance matrix        
         mu_new = mu + K.dot(z_dif)
-        cov_new = (np.eye(n)-K.dot(H)).dot(cov)
+        cov_new = (np.eye(2*n+3)-K.dot(H)).dot(cov)
+    print("Cov_new: ", cov_new)
     
-    print('Updated location\t x: {0:.2f} \t y: {1:.2f} \t theta: {2:.2f}'.format(mu[0][0],mu[1][0],mu[2][0]))
+    print('Updated location\t x: {0:.2f} \t y: {1:.2f} \t theta: {2:.2f}'.format(mu_new[0][0],mu_new[1][0],mu_new[2][0]))
     return mu_new, cov_new
 
 def move(target_pose):
-    '''
-    motion_noise = np.matmul(np.random.randn(1,3), Rt)[0]
-    [dtrans, drot1, drot2] = u[:3] + motion_noise
-    
-    x = [pose_x, pose_y, pose_theta]
-    x_new = x[0] + dtrans*np.cos(x[2]+drot1)
-    y_new = x[1] + dtrans*np.sin(x[2]+drot1)
-    theta_new = (x[2] + drot1 + drot2 + np.pi) % (2*np.pi) - np.pi
-    
-    x_true = [x_new, y_new, theta_new]
-    '''
     lspeed, rspeed, (phi_l, phi_r) = get_wheel_speeds(target_pose)
-    print(target_pose[:2])
-    print(mu)
-    print(np.array(mu[0][0],mu[1][0]))
     dtrans = np.linalg.norm(np.array(target_pose[:2]) - np.array(mu[0][0],mu[1][0]))
     u = [dtrans, phi_l, phi_r]
     
@@ -501,6 +502,7 @@ def move(target_pose):
 def generate_obs():
     global lidar, lidar_data
     lidar_data = lidar.getRangeImage()
+    #print(lidar_data)
 
     #convert lidar to world locations
     lidar_readings = []
@@ -508,7 +510,8 @@ def generate_obs():
         lidar_found_loc = convert_lidar_reading_to_world_coord(i, lidar_data[i])
         if lidar_found_loc is not None:
             lidar_readings.append(lidar_found_loc)
-
+    
+    #print(lidar_readings)
     #Run RANSAC on lidar_data
     obs = extract_line_landmarks(lidar_readings)
 
@@ -561,9 +564,11 @@ def main():
     lidar_obs = []
     u = [0, 0, 0] #State vector
     #Tolerances for reaching waypoint state
-    x_tol = 0.05
-    y_tol = 0.05
-    theta_tol = 0.05
+    x_tol = 0.06
+    y_tol = 0.06
+    theta_tol = 0.06
+    last_EKF_update = None
+    waypoint = True
 
     #Init with known start location
     EKF_init(start_pose)
@@ -584,7 +589,11 @@ def main():
         time_elapsed = robot.getTime() - last_odometry_update_time
         update_odometry(left_wheel_direction, right_wheel_direction, time_elapsed)
         last_odometry_update_time = robot.getTime()
-        print("Current pose: [%5f, %5f, %5f]" % (pose_x, pose_y, pose_theta))
+        print("Current pose: [%5f, %5f, %5f]" % (mu[0][0], mu[1][0], mu[2][0]))
+        #print("Current pose: [%5f, %5f, %5f]" % (pose_x, pose_y, pose_theta))
+        
+        if last_EKF_update is None:
+            last_EKF_update = robot.getTime()
 
         #Get next position in path to traverse
         if pos_idx == len(robot_path):
@@ -592,46 +601,81 @@ def main():
         target_pose = robot_path[pos_idx]
 
         #Move
-        if state == "move":
-            #Move and update state vector for EKF
-            u = move(target_pose)
-            print("U: ", u)
+        #if state == "move":
+        #Move and update state vector for EKF
+        print("Moving")
+        u_tmp = move(target_pose)
+        if waypoint:
+            u = u_tmp
+            waypoint = False
+        print("U: ", u)
 
-            #At waypoint location
-            if (abs(pose_x - target_pose[0]) < x_tol and 
-                abs(pose_y - target_pose[1]) < y_tol and
-                abs(pose_theta - target_pose[2]) < theta_tol): 
-                
-                print("\n****At Waypoint****\n")
-                leftMotor.setVelocity(0)
-                rightMotor.setVelocity(0)
-                pos_idx += 1
-                state = "sense"
+        #At waypoint location
+        #use supervisor to ensure truth of path while mapping
+        x,y,theta = SLAM_controller_supervisor.supervisor_get_robot_pose()
+        if (abs(x - target_pose[0]) < x_tol and 
+            abs(y - target_pose[1]) < y_tol and
+            abs(theta - target_pose[2]) < theta_tol): 
+            
+            print("\n****At Waypoint****\n")
+            waypoint = True
+            leftMotor.setVelocity(0)
+            rightMotor.setVelocity(0)
+            pos_idx += 1
+            #state = "sense"
         #Sense
-        elif state == "sense":
-            lidar_obs = generate_obs()
-            print("Lidar Obs: ", lidar_obs)
-            state = "predict"
-
-        #Predict
-        elif state == "predict":
+        print("Sensing")
+        tmp_obs = generate_obs()
+        #print("TMP_OBS: ", tmp_obs)
+        for ob in tmp_obs:
+            add = True
+            for ob_2 in lidar_obs:
+                #print(ob[2], ob_2[2])
+                if ob[2] == ob_2[2]:
+                    add = False
+            if add:
+                lidar_obs.append(ob)
+            
+        print("Lidar Obs: ", lidar_obs)
+            
+        print("ZZZZZZZZZZZZZZZZZzz:", robot.getTime() - last_EKF_update)
+        if robot.getTime() - last_EKF_update> 0.5:
+            print("EKF Run")
+            #Predict
+            #elif state == "predict":
+            print("EKF Predict")
             mu_new, cov = EKF_predict(u, Rt)
-            mu = np.append(mu,mu_new,axis=1)
-            state = "update"
-        #Update
-        elif state == "update":
+            mu = mu_new
+            #mu = np.append(mu,mu_new,axis=1)
+            
+            #Update
+            print("EKF Update")
+            if len(lidar_obs) == 0:
+                print("Skipping as no new obs")
+                continue
+            
             mu_new, cov = EKF_update(lidar_obs, Qt)
-            print(mu)
-            print(mu_new)
-            mu = np.append(mu,mu_new,axis=1)
-            state = "move"
-        else:
+            mu = mu_new
+            lidar_obs = []
+            #mu = np.append(mu,mu_new,axis=1)
+            
+            print("MU: ", mu)
+
+            print("Cov: ", cov)
+            last_EKF_update = robot.getTime()
+            
+            
+            
+            #state = "move"
+            #else:
+            '''
             #Stop
             print("Stopping!")
             left_wheel_direction, right_wheel_direction = 0, 0
             leftMotor.setVelocity(0)
             rightMotor.setVelocity(0)    
             break
+            '''
 
         # Loop Closure
         if False not in [ground_sensor_readings[i] < GROUND_SENSOR_THRESHOLD for i in range(3)]:
@@ -641,7 +685,7 @@ def main():
                 #Update current location to ground truth
                 u = move([pose_x, pose_y, pose_theta])
                 mu[0][0], mu[1][0], mu[2][0] = pose_x, pose_y, pose_theta
-                state = "sense"
+                #state = "sense"
                 loop_closure_detection_time = 0
         else:
             loop_closure_detection_time = 0
