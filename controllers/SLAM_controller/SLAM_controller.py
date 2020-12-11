@@ -530,6 +530,17 @@ def main():
     global cov, cov_new, Rt, Qt, mu, mu_new
     
     last_odometry_update_time = None
+
+    #path for robot to try and follow
+    robot_path = [[ 0.30928,   0.176902,   1.046032],
+                  [ 0.433827,  0.642393,   1.3084],
+                  [ 0.434453,  1.702051,   1.5702],
+                  [ 0.275088,  1.978296,   2.353669],
+                  [-0.144059,  1.9779351,  3.139076],
+                  [-0.484122,  1.556442,   4.449154],
+                  [-0.486042,  0.158664,   4.711667],
+                  [-0.345818,  0.018178,  -0.783037],
+                  [-0.03,     -0.05,       0]         ]
     
     # Keep track of which direction each wheel is turning
     left_wheel_direction = WHEEL_STOPPED
