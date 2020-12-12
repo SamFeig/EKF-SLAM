@@ -543,8 +543,8 @@ def main():
                   [ 0.434453,  1.702051,   1.5702],
                   [ 0.275088,  1.978296,   2.353669],
                   [-0.144059,  1.9779351,  3.12076],
-                  [-0.484122,  1.556442,   4.449154],
-                  [-0.486042,  0.158664,   4.711667],
+                  [-0.484122,  1.556442,  -1.83403],
+                  [-0.486042,  0.158664,  -1.57152],
                   [-0.345818,  0.018178,  -0.783037],
                   [-0.03,     -0.05,       0]         ]
     pos_idx = 0
@@ -565,7 +565,7 @@ def main():
     #Tolerances for reaching waypoint state
     x_tol = 0.06
     y_tol = 0.06
-    theta_tol = 0.06
+    theta_tol = 0.1
     last_EKF_update = None
     waypoint = True
 
@@ -610,8 +610,10 @@ def main():
         print("U: ", u)
 
         #At waypoint location
+        print(robot_path[pos_idx])
         #use supervisor to ensure truth of path while mapping
         x,y,theta = SLAM_controller_supervisor.supervisor_get_robot_pose()
+        theta = get_bounded_theta(theta)
         if (abs(x - target_pose[0]) < x_tol and 
             abs(y - target_pose[1]) < y_tol and
             abs(theta - target_pose[2]) < theta_tol): 
