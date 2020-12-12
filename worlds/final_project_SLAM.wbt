@@ -4,7 +4,7 @@ WorldInfo {
 }
 Viewpoint {
   orientation 1 0 0 4.71238898038469
-  position 3.090392840969529e-16 6.306159936348347 7.001243958302649e-16
+  position 0.23734465899659252 6.465049211525708 0.07904678208764292
 }
 TexturedBackground {
 }
@@ -28,10 +28,6 @@ RectangleArena {
   wallHeight 0.01
 }
 E-puck {
-  hidden translation_1 -0.025999999878426605 0.020004133936414648 -3.790433453221276e-10
-  hidden rotation_1 -0.002682615003075533 -9.196726304115058e-05 -0.999996397552895 1.032382731180714e-07
-  hidden translation_2 0.02600000000684921 0.020004009295663844 -3.8099853133521933e-10
-  hidden rotation_2 -0.002439122983182107 9.518161664400701e-05 0.9999970208053286 1.032382731180714e-07
   translation -0.0500001 0 1.05
   rotation 0 1 0 -1.5707953071795862
   name "EPUCK"
@@ -47,169 +43,55 @@ E-puck {
   ]
 }
 CardboardBox {
-  translation -0.304935 0.15 1.32634
+  translation 0.035065 0.15 1.28634
   name "cardboard box(1)"
-  size 0.6 0.3 0.05
+  size 1.1 0.3 0.05
 }
 CardboardBox {
-  translation -0.898668 0.15 -0.192075
+  translation -0.898668 0.15 -0.042075
   rotation 0 1 0 -1.5707953071795862
   name "cardboard box(4)"
-  size 0.6 0.3 0.05
+  size 1.9 0.3 0.05
+}
+CardboardBox {
+  translation -0.602195 0.15 1.07641
+  rotation 0 -1 0 0.785401
+  name "cardboard box(9)"
+  size 0.9 0.3 0.05
 }
 CardboardBox {
   translation 0.630052 0.15 1.07814
-  rotation 0 -1 0 -1.0472053071795866
+  rotation 0 -1 0 -0.7854053071795866
   name "cardboard box(2)"
   size 0.6 0.3 0.05
 }
 CardboardBox {
-  translation 0.732083 0.15 0.110506
-  rotation 0 1 0 1.8326
+  translation 0.776079 0.15 -0.045291
+  rotation 0 -1 0 -1.5708053071795867
   name "cardboard box(8)"
-  size 0.6 0.3 0.05
+  size 2.2 0.3 0.05
 }
 CardboardBox {
-  translation 0.788492 0.15 -0.80489
-  rotation 0 1 0 1.8326
+  translation 0.605504 0.15 -1.14658
+  rotation 0 1 0 2.3562
   name "cardboard box(5)"
-  size 0.6 0.3 0.05
+  size 0.9 0.3 0.05
 }
 CardboardBox {
-  translation -0.407188 0.15 -1.23353
-  rotation 0 1 0 -2.617985307179586
-  name "cardboard box(6)"
-  size 0.6 0.3 0.05
-}
-CardboardBox {
-  translation 0.0735001 0.15 -0.386664
-  rotation 0 -1 0 -1.0472053071795866
+  translation -0.651863 0.15 -1.12538
+  rotation 0 -1 0 2.35619
   name "cardboard box(3)"
-  size 0.6 0.3 0.05
+  size 1 0.3 0.05
 }
 CardboardBox {
-  translation -0.171956 0.15 0.418463
-  rotation 0 1 0 1.309
+  translation -0.0491608 0.15 -1.35147
+  rotation 0 1 0 -3.1415853071795863
+  name "cardboard box(6)"
+  size 1.3 0.3 0.05
+}
+CardboardBox {
+  translation -0.021958 0.15 -0.081537
+  rotation 0 1 0 1.5708
   name "cardboard box(7)"
-  size 0.6 0.3 0.05
-}
-OilBarrel {
-  translation -0.07 0.15 0.71
-  name "oil barrel(4)"
-  height 0.3
-  radius 0.1
-}
-OilBarrel {
-  translation 0.08 0.15 0.5
-  name "oil barrel(13)"
-  height 0.3
-  radius 0.1
-}
-OilBarrel {
-  translation 0.01 0.15 0.24
-  name "oil barrel(10)"
-  height 0.3
-  radius 0.1
-}
-OilBarrel {
-  translation 0.11 0.15 1.28
-  name "oil barrel(5)"
-  height 0.3
-  radius 0.1
-}
-OilBarrel {
-  translation 0.33 0.15 1.36
-  name "oil barrel(2)"
-  height 0.3
-  radius 0.1
-}
-OilBarrel {
-  translation 0.77 0.15 0.61
-  name "oil barrel(3)"
-  height 0.3
-  radius 0.1
-}
-OilBarrel {
-  translation 0.78 0.15 -0.33
-  name "oil barrel(14)"
-  height 0.3
-  radius 0.1
-}
-OilBarrel {
-  translation -0.89 0.15 -0.64
-  name "oil barrel(15)"
-  height 0.3
-  radius 0.1
-}
-OilBarrel {
-  translation -0.8 0.15 -1.14
-  name "oil barrel(16)"
-  height 0.3
-  radius 0.1
-}
-OilBarrel {
-  translation -0.74 0.15 -0.88
-  name "oil barrel(17)"
-  height 0.3
-  radius 0.1
-}
-OilBarrel {
-  translation 0 0.15 -1.37
-  name "oil barrel(23)"
-  height 0.3
-  radius 0.1
-}
-OilBarrel {
-  translation 0.56 0.15 -1.2
-  name "oil barrel(25)"
-  height 0.3
-  radius 0.1
-}
-OilBarrel {
-  translation 0.27 0.15 -1.39
-  name "oil barrel(26)"
-  height 0.3
-  radius 0.1
-}
-OilBarrel {
-  translation 0.05 0.15 -0.7
-  name "oil barrel(11)"
-  height 0.3
-  radius 0.1
-}
-OilBarrel {
-  translation -0.19 0.15 -0.53
-  name "oil barrel(20)"
-  height 0.3
-  radius 0.1
-}
-OilBarrel {
-  translation -0.13 0.15 -0.32
-  name "oil barrel(19)"
-  height 0.3
-  radius 0.1
-}
-OilBarrel {
-  translation -0.72191 0.15 1.20698
-  name "oil barrel(21)"
-  height 0.3
-  radius 0.1
-}
-OilBarrel {
-  translation -0.79191 0.15 0.22698
-  name "oil barrel(1)"
-  height 0.3
-  radius 0.1
-}
-OilBarrel {
-  translation -0.88191 0.15 0.87698
-  name "oil barrel(6)"
-  height 0.3
-  radius 0.1
-}
-OilBarrel {
-  translation -0.91191 0.15 0.47698
-  name "oil barrel(18)"
-  height 0.3
-  radius 0.1
+  size 1.5 0.3 0.34
 }

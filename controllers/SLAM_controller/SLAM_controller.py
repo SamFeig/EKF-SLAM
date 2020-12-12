@@ -33,9 +33,9 @@ LIDAR_ANGLE_RANGE = 1.5708 # 90 degrees, 1.5708 radians
 #RANSAC values
 MAX_TRIALS = 1000 # Max times to run algorithm
 MAX_SAMPLE = 10 # Randomly select X points
-MIN_LINE_POINTS = 5 # If less than 5 points left, stop algorithm
-RANSAC_TOLERANCE = 0.25 # If point is within 5 cm of line, it is part of the line
-RANSAC_CONSENSUS = 5 # At least 5 points required to determine if a line
+MIN_LINE_POINTS = 6 # If less than 5 points left, stop algorithm
+RANSAC_TOLERANCE = 0.15 # If point is within 20 cm of line, it is part of the line
+RANSAC_CONSENSUS = 6 # At least 5 points required to determine if a line
 
 # Robot Pose Values
 pose_x = 0
@@ -105,7 +105,7 @@ lidar_offsets = np.linspace(step*(LIDAR_ANGLE_BINS//2), -step*(LIDAR_ANGLE_BINS/
 print(lidar_offsets)
 
 #EKF Vars
-n = 8 # number of static landmarks
+n = 20 # number of static landmarks
 mu = []
 cov = []
 mu_new = []
@@ -299,12 +299,11 @@ def get_line_landmark(line):
 
     found = False
     for [x, y, j] in landmark_globals:
-        if math.dist([x, y], [lm_x, lm_y]) <= 0.25:
+        if math.dist([x, y], [lm_x, lm_y]) <= 0.5:
             lm_j = j
             found = True
             break
-        else:
-            lm_j += 1
+        lm_j += 1
 
     #If we didn't match the landmark to a previously found one and we're over the cap for new landmarks, return none to not calculate with this landmark
     if not found and len(landmark_globals) >= n:
@@ -543,7 +542,7 @@ def main():
                   [ 0.433827,  0.642393,   1.3084],
                   [ 0.434453,  1.702051,   1.5702],
                   [ 0.275088,  1.978296,   2.353669],
-                  [-0.144059,  1.9779351,  3.139076],
+                  [-0.144059,  1.9779351,  3.12076],
                   [-0.484122,  1.556442,   4.449154],
                   [-0.486042,  0.158664,   4.711667],
                   [-0.345818,  0.018178,  -0.783037],
@@ -637,8 +636,8 @@ def main():
                 lidar_obs.append(ob)
             
         print("Lidar Obs: ", lidar_obs)
-            
-        print("ZZZZZZZZZZZZZZZZZzz:", robot.getTime() - last_EKF_update)
+        print("All lidar objects detected this run: ", landmark_globals)
+
         if robot.getTime() - last_EKF_update> 0.5:
             print("EKF Run")
             #Predict
